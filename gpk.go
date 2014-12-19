@@ -411,7 +411,7 @@ func ReplaceWithGithubPath(pkgDir string) error {
 		}
 
 		for _, file := range dpkg.GoFiles {
-			fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
+			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
 
 			path := filepath.Join(pkg.SrcRoot, dep, file)
 
@@ -438,7 +438,7 @@ func ReplaceWithGithubPath(pkgDir string) error {
 		}
 
 		for _, file := range dpkg.TestGoFiles {
-			fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
+			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
 
 			path := filepath.Join(pkg.SrcRoot, dep, file)
 
@@ -516,7 +516,7 @@ func ReplaceWithGopkginPath(pkgdir string, version [3]int) error {
 		}
 
 		for _, file := range dpkg.GoFiles {
-			fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
+			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
 
 			path := filepath.Join(pkg.SrcRoot, dep, file)
 
@@ -549,7 +549,7 @@ func ReplaceWithGopkginPath(pkgdir string, version [3]int) error {
 		}
 
 		for _, file := range dpkg.TestGoFiles {
-			fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
+			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
 
 			path := filepath.Join(pkg.SrcRoot, dep, file)
 

@@ -258,6 +258,17 @@ func TestReplaceWithGithubPath(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReplaceWithGopkginPath(t *testing.T) {
+	p := filepath.Join(wd, "..", "builtin")
+	p, _ = filepath.Abs(p)
+	err := ReplaceWithGopkginPath(p, [3]int{3, 0, 0})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 */
 
 func TestReplaceGopkgin(t *testing.T) {
@@ -300,8 +311,45 @@ func TestReplaceGopkgin(t *testing.T) {
 			t.Fatal(err1)
 		}
 		if got, want := string(bt), test.expected; got != want {
-			t.Errorf("replaceGopkgin(%#v, %#v) = %#v; want %#v", test.pkg, test.file, got, want)
+			t.Errorf("replaceGopkgin(%#v, %#v, %#v) = %#v; want %#v", bare, test.pkg, test.file, got, want)
 		}
 	}
 
 }
+
+func TestReplaceGithub(t *testing.T) {
+	// replaceGopkgin(gopkgin string, in []byte) ([]byte, error)
+
+	tests := []struct {
+		file     string
+		search   string
+		target   string
+		expected string
+	}{
+		{
+			"asbd \"github.com/a/b/c\"\n\"github.com/a/b/c\"",
+			`github.com/a/b/c`,
+			"gopkg.in/a/b/c.v1.2.3",
+			"asbd \"gopkg.in/a/b/c.v1.2.3\"\n\"gopkg.in/a/b/c.v1.2.3\"",
+		},
+		{
+			"asbd \"github.com/a/b/c\"\n\"github.com/a/b/d\"",
+			`github.com/a/b`,
+			"gopkg.in/a/b.v1.2.3",
+			"asbd \"gopkg.in/a/b.v1.2.3/c\"\n\"gopkg.in/a/b.v1.2.3/d\"",
+		},
+	}
+
+	for _, test := range tests {
+		bt, err1 := replaceGithub(test.search, test.target, []byte(test.file))
+		if err1 != nil {
+			t.Fatal(err1)
+		}
+		if got, want := string(bt), test.expected; got != want {
+			t.Errorf("replaceGithub(%#v,%#v, %#v) = %#v; want %#v", test.search, test.target, test.file, got, want)
+		}
+	}
+
+}
+
+// replaceGithub(pkgPath, target, out)
