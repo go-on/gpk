@@ -407,3 +407,21 @@ func TestLastVersion(t *testing.T) {
 	}
 
 }
+
+func TestVersionString(t *testing.T) {
+	tests := []struct {
+		version  [3]int
+		expected string
+	}{
+		{[3]int{1, 4, 0}, "v1.4"},
+		{[3]int{1, 4, 2}, "v1.4.2"},
+		{[3]int{3, 0, 0}, "v3"},
+	}
+
+	for _, test := range tests {
+
+		if got, want := VersionString(test.version), test.expected; got != want {
+			t.Errorf("VersionString(%v) = %#v; want %#v", test.version, got, want)
+		}
+	}
+}

@@ -618,6 +618,7 @@ func lastVersion(versions ...[3]int) [3]int {
 	return [3]int(sv[len(versions)-1])
 }
 
+// VersionString returns something like v2.4 for [3]int{2,4,0}
 func VersionString(version [3]int) string {
 	vers := fmt.Sprintf("v%d", version[0])
 	if version[1] != 0 {
