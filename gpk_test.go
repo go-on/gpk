@@ -425,3 +425,9 @@ func TestVersionString(t *testing.T) {
 		}
 	}
 }
+
+func TestSetNewMinor(t *testing.T) {
+	p := filepath.Join(wd, "..", "builtin")
+	p, _ = filepath.Abs(p)
+	SetNewMinor(p, "just a test")
+}

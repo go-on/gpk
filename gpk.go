@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"go/build"
+	"gopkg.in/metakeule/gitlib.v1"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -651,4 +653,126 @@ func LastVersion(versions ...string) ([3]int, error) {
 	}
 
 	return lastVersion(v...), nil
+}
+
+// gitTags returns the tags for the repo
+func gitTags(tr *gitlib.Transaction) (tags []string, err error) {
+	return tr.Tags()
+}
+
+// lastVersionFromTag returns the last version from the tag of the repository
+func lastVersionFromTag(tr *gitlib.Transaction) ([3]int, error) {
+	var v [3]int
+	tags, err := gitTags(tr)
+
+	if err != nil {
+		return v, err
+	}
+
+	return LastVersion(tags...)
+}
+
+func setTag(tr *gitlib.Transaction, tag string) error {
+	sha1, err := tr.GetSymbolicRef("HEAD")
+
+	if err != nil {
+		return err
+	}
+
+	return tr.Tag(tag, sha1, "")
+}
+
+func gitPushTags(tr *gitlib.Transaction) error {
+	return tr.PushTags()
+}
+
+func SetNewMajor(dir string, message string) ([3]int, error) {
+	return setNewVersion(dir, message, 0)
+}
+
+func SetNewMinor(dir string, message string) ([3]int, error) {
+	return setNewVersion(dir, message, 1)
+}
+
+func SetNewPatch(dir string, message string) ([3]int, error) {
+	return setNewVersion(dir, message, 2)
+}
+
+// setNewVersion does the following:
+// - gets the next version (level = 2 (patch) / 1 (minor)/ 0 (major))
+// - replaces the references inside this package to this version
+// - does a commit with the given message
+// - tags this version
+// - pushes the current branch to the default target, including the new tags
+// - returns the new version and the first error
+//
+func setNewVersion(dir string, message string, level int) ([3]int, error) {
+	var vers [3]int
+
+	if level != 0 && level != 1 && level != 2 {
+		return vers, fmt.Errorf("invalid level: %d", level)
+	}
+
+	git, err := gitlib.NewGit(dir)
+
+	if err != nil {
+		return vers, err
+	}
+
+	err = git.Transaction(func(tr *gitlib.Transaction) error {
+
+		var err error
+		vers, err = lastVersionFromTag(tr)
+
+		if err != nil {
+			return err
+		}
+
+		switch level {
+		case 0:
+			vers[0]++
+			vers[1] = 0
+			vers[2] = 0
+		case 1:
+			vers[1]++
+			vers[2] = 0
+		case 2:
+			vers[2]++
+		}
+
+		err = ReplaceWithGopkginPath(dir, vers)
+
+		if err != nil {
+			return err
+		}
+
+		err = tr.Commit(message)
+
+		if err != nil {
+			return err
+		}
+
+		err = setTag(tr, VersionString(vers))
+
+		if err != nil {
+			return err
+		}
+
+		return tr.PushTags()
+	})
+
+	return vers, err
+
+}
+
+func GoGetAndInstall(pkgPath string) error {
+	cmd := exec.Command("go", "get", pkgPath)
+	err := cmd.Run()
+
+	if err != nil {
+		return err
+	}
+
+	cmd = exec.Command("go", "install", pkgPath+"/...")
+	return cmd.Run()
 }
