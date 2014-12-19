@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -264,22 +265,16 @@ func InGoPkgin(path string) bool {
 
 var ErrNoGoPkginPath = errors.New("no gopkg.in path")
 var ErrInvalidGoPkginPath = errors.New("invalid gopkg.in path")
+var ErrInvalidGoPkginVersion = errors.New("invalid gopkg.in version string")
 
-// GoPkginVersion parses major minor and patch version out of
-// a gopkg.in package string
-func GoPkginVersion(path string) ([3]int, error) {
+// parseVersion parses the version out of strings like
+// v1 v2.3 v4.0.3
+func parseVersion(version string) ([3]int, error) {
 	v := [3]int{0, 0, 0}
-
-	if !InGoPkgin(path) {
-		return v, ErrNoGoPkginPath
+	if !strings.HasPrefix(version, "v") || len(version) < 2 {
+		return v, ErrInvalidGoPkginVersion
 	}
-
-	idx := strings.LastIndex(path, "v")
-	if idx == -1 || len(path) <= idx+1 {
-		return v, ErrInvalidGoPkginPath
-	}
-
-	vers := path[idx+1:]
+	vers := version[1:]
 	a := strings.Split(vers, ".")
 
 	max := len(a)
@@ -295,8 +290,33 @@ func GoPkginVersion(path string) ([3]int, error) {
 		}
 		v[i] = n
 	}
-
 	return v, nil
+}
+
+// GoPkginVersion parses major minor and patch version out of
+// a gopkg.in package string
+func GoPkginVersion(path string) ([3]int, error) {
+	v := [3]int{0, 0, 0}
+
+	if !InGoPkgin(path) {
+		return v, ErrNoGoPkginPath
+	}
+
+	idx := strings.LastIndex(path, "v")
+	if idx == -1 || len(path) <= idx+1 {
+		return v, ErrInvalidGoPkginPath
+	}
+
+	end := strings.LastIndex(path, "/")
+	if end == -1 {
+		return v, ErrInvalidGoPkginPath
+	}
+
+	if end < idx {
+		end = len(path)
+	}
+
+	return parseVersion(path[idx:end])
 }
 
 var ErrInvalidGithubPath = errors.New("invalid github path")
@@ -320,19 +340,9 @@ func GoPkginPath(p string, version [3]int) (string, error) {
 		return "", ErrInvalidGithubPath
 	}
 
-	vers := fmt.Sprintf(".v%d", version[0])
-	if version[1] != 0 {
-		vers += fmt.Sprintf(".%d", version[1])
-	}
-	if version[2] != 0 {
-		if version[1] == 0 {
-			vers += fmt.Sprintf(".0.%d", version[2])
-		} else {
-			vers += fmt.Sprintf(".%d", version[2])
-		}
-	}
+	vers := VersionString(version)
 
-	return fmt.Sprintf("gopkg.in%s%s", p[idx:], vers), nil
+	return fmt.Sprintf("gopkg.in%s.%s", p[idx:], vers), nil
 }
 
 // GithubPath returns the github path for the gopkg.in path
@@ -585,4 +595,59 @@ func ReplaceWithGopkginPath(pkgdir string, version [3]int) error {
 	}
 
 	return nil
+}
+
+type sortVersion [][3]int
+
+func (v sortVersion) Len() int      { return len(v) }
+func (v sortVersion) Swap(i, j int) { v[i], v[j] = v[j], v[i] }
+func (v sortVersion) Less(i, j int) bool {
+	if v[i][0] == v[j][0] {
+		if v[i][1] == v[j][1] {
+			return v[i][2] < v[j][2]
+		}
+		return v[i][1] < v[j][1]
+	}
+	return v[i][0] < v[j][0]
+}
+
+// lastVersion returns the last version of a version slice
+func lastVersion(versions ...[3]int) [3]int {
+	sv := sortVersion(versions)
+	sort.Sort(sv)
+	return [3]int(sv[len(versions)-1])
+}
+
+func VersionString(version [3]int) string {
+	vers := fmt.Sprintf("v%d", version[0])
+	if version[1] != 0 {
+		vers += fmt.Sprintf(".%d", version[1])
+	}
+	if version[2] != 0 {
+		if version[1] == 0 {
+			vers += fmt.Sprintf(".0.%d", version[2])
+		} else {
+			vers += fmt.Sprintf(".%d", version[2])
+		}
+	}
+	return vers
+}
+
+// LastVersion returns the last version of a version slice like this
+// []string{"v1","v5", "v1.10"}
+func LastVersion(versions ...string) ([3]int, error) {
+	l := [3]int{0, 0, 0}
+	var v [][3]int
+
+	for _, vers := range versions {
+		vv, err := parseVersion(vers)
+
+		if err != nil {
+			return l, err
+		}
+
+		v = append(v, vv)
+	}
+
+	return lastVersion(v...), nil
 }

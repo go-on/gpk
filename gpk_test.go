@@ -159,8 +159,13 @@ func TestGoPkginVersion(t *testing.T) {
 			ErrInvalidGoPkginPath,
 		},
 		{
-			"gopkg.in/go-on/builtin.v1.2.3.4",
+			"gopkg.in/go-on/builtin.v1.2.3/sql",
 			[3]int{1, 2, 3},
+			nil,
+		},
+		{
+			"gopkg.in/go-on/builtin.v1/sql",
+			[3]int{1, 0, 0},
 			nil,
 		},
 	}
@@ -352,4 +357,53 @@ func TestReplaceGithub(t *testing.T) {
 
 }
 
+func TestlastVersion(t *testing.T) {
+
+	tests := []struct {
+		versions [][3]int
+		last     [3]int
+	}{
+		{[][3]int{{1, 2, 0}, {1, 4, 0}}, [3]int{1, 4, 0}},
+		{[][3]int{{3, 2, 0}, {1, 4, 0}}, [3]int{3, 2, 0}},
+		{[][3]int{{1, 2, 1}, {1, 2, 0}}, [3]int{1, 2, 1}},
+		{[][3]int{{1, 0, 0}, {2, 0, 0}}, [3]int{2, 0, 0}},
+		{[][3]int{{1, 0, 0}, {2, 0, 0}, {1, 2, 0}}, [3]int{2, 0, 0}},
+		{[][3]int{{3, 0, 0}, {2, 0, 0}, {3, 2, 0}}, [3]int{3, 2, 0}},
+	}
+
+	for _, test := range tests {
+
+		if got, want := lastVersion(test.versions...), test.last; got != want {
+			t.Errorf("lastVersion(%v...) = %v; want %v", test.versions, got, want)
+		}
+	}
+
+}
+
 // replaceGithub(pkgPath, target, out)
+
+func TestLastVersion(t *testing.T) {
+
+	tests := []struct {
+		versions []string
+		last     [3]int
+	}{
+		{[]string{"v1.4", "v1"}, [3]int{1, 4, 0}},
+		{[]string{"v2", "v1.4", "v1"}, [3]int{2, 0, 0}},
+		{[]string{"v2", "v1.4", "v1", "v2.0.1"}, [3]int{2, 0, 1}},
+		{[]string{"v2", "v1.4", "v1", "v2.3"}, [3]int{2, 3, 0}},
+	}
+
+	for _, test := range tests {
+		vers, err := LastVersion(test.versions...)
+
+		if err != nil {
+			t.Error(err)
+		}
+
+		if got, want := vers, test.last; got != want {
+			t.Errorf("LastVersion(%#v...) = %v; want %v", test.versions, got, want)
+		}
+	}
+
+}
