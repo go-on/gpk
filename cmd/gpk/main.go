@@ -19,7 +19,7 @@ last_version // shows the last version by tags
 */
 
 var (
-	cfg = config.MustNew("gpk", "0.0.1", "gpk is a tool to manage go libraries")
+	cfg = config.MustNew("gpk", "1.0.0", "gpk is a tool to manage go libraries")
 
 	dir = cfg.NewString(
 		"dir",
@@ -31,19 +31,18 @@ var (
 
 	develop = cfg.MustCommand("develop", "switch package to github repo in order to develop")
 
-	release = cfg.MustCommand("release", "commit current changes and create a release tag")
-	step    = release.NewString("step", "step that should be upped, available options are: minor|major|patch",
+	release     = cfg.MustCommand("release", "change pkg import paths to release tag")
+	releaseStep = release.NewString("step", "step that should be upped, available options are: minor|major|patch",
 		config.Required,
 		config.Default("patch"),
 		config.Shortflag('s'),
 	)
-	message = release.NewString(
-		"message",
-		"commit message",
+	push     = cfg.MustCommand("push", "tag the version and push it")
+	pushStep = push.NewString("step", "step that should be upped, available options are: minor|major|patch",
 		config.Required,
-		config.Shortflag('m'),
+		config.Default("patch"),
+		config.Shortflag('s'),
 	)
-
 	imports = cfg.MustCommand("imports", "show imported packages excluding stdlib packages")
 	deps    = cfg.MustCommand("deps", "show packages inside the given dir that depends packages of the repo")
 )
@@ -80,7 +79,7 @@ func main() {
 		reportError(err)
 		var path string
 		path, err = gpk.PkgPath(p)
-		fmt.Println(path)
+		// fmt.Println(path)
 		reportError(err)
 		var depends []string
 		//depends, err = gpk.DependentsPrefix(getDir(), filepath.Join(p.SrcRoot, path))
@@ -91,21 +90,57 @@ func main() {
 		err = gpk.ReplaceWithGithubPath(getDir())
 	case release:
 		var version [3]int
-		switch step.Get() {
+		switch releaseStep.Get() {
 		case "major":
-			version, err = gpk.SetNewMajor(getDir(), message.Get())
+			version, err = gpk.SetNewMajor(getDir())
 		case "minor":
-			version, err = gpk.SetNewMinor(getDir(), message.Get())
+			version, err = gpk.SetNewMinor(getDir())
 		case "patch":
-			version, err = gpk.SetNewPatch(getDir(), message.Get())
+			version, err = gpk.SetNewPatch(getDir())
 		default:
-			err = fmt.Errorf("unsupported step: %s", step.Get())
+			err = fmt.Errorf("unsupported step: %s", releaseStep.Get())
 			// report error here
 		}
 
+		var changedVersion [3]int
+		changedVersion[0] = version[0]
 		if err == nil {
-			fmt.Fprintf(os.Stdout, "added tag: %s\n", gpk.VersionString(version))
+			fmt.Fprintf(
+				os.Stdout,
+				"changed pkg imports to: %s (for %s)\nDon't forget to run gpk push --step=%s\n",
+				gpk.VersionString(changedVersion),
+				gpk.VersionString(version),
+				releaseStep.Get(),
+			)
 		}
+	case push:
+		var version [3]int
+		switch pushStep.Get() {
+		case "major":
+			version, err = gpk.PushNewMajor(getDir())
+		case "minor":
+			version, err = gpk.PushNewMinor(getDir())
+		case "patch":
+			version, err = gpk.PushNewPatch(getDir())
+		default:
+			err = fmt.Errorf("unsupported step: %s", pushStep.Get())
+			// report error here
+		}
+
+		var installedVersion [3]int
+		installedVersion[0] = version[0]
+		if err == nil {
+			fmt.Fprintf(
+				os.Stdout,
+				"tagged and pushed: %s\ninstalled %s\n",
+				gpk.VersionString(version),
+				gpk.VersionString(installedVersion),
+			)
+		}
+	default:
+		fmt.Fprintln(os.Stderr, cfg.Usage())
+		os.Exit(1)
+
 	}
 
 	reportError(err)

@@ -349,6 +349,7 @@ func GithubPath(p string) (string, error) {
 }
 
 func replaceGopkgin(gopkginBare string, target string, in []byte) ([]byte, error) {
+	// fmt.Printf("replacing %#v with %#v\n", gopkginBare, target)
 	re, err := regexp.Compile(`"` + regexp.QuoteMeta(gopkginBare+".v") + `([0-9]+)(\.[0-9]+)*`)
 	// fmt.Println(re)
 	if err != nil {
@@ -359,6 +360,7 @@ func replaceGopkgin(gopkginBare string, target string, in []byte) ([]byte, error
 }
 
 func replaceGithub(github string, target string, in []byte) ([]byte, error) {
+	// fmt.Printf("replacing %#v with %#v\n", github, target)
 	re, err := regexp.Compile(`"` + regexp.QuoteMeta(github) + `("|/)`)
 	// fmt.Println(re)
 	if err != nil {
@@ -382,6 +384,8 @@ func (r replaceFile) replace() error {
 		original []byte
 		replaced []byte
 	)
+
+	// fmt.Printf("replace called for file: %#v %s => %s, %s => %s\n", r.filepath, r.gopkgin, r.target, r.pkgPath, r.target)
 
 steps:
 	for jump := 1; err == nil; jump++ {
@@ -409,7 +413,6 @@ steps:
 // It can be used for developement to be able to run the tests, switch back by calling
 // ReplaceWithGopkginPath
 func ReplaceWithGithubPath(pkgDir string) error {
-
 	var (
 		err     error
 		pkg     *build.Package
@@ -465,7 +468,8 @@ steps:
 // It can be used to release a package after ReplaceWithGithubPath has been used or to update
 // a version number
 func ReplaceWithGopkginPath(pkgdir string, version [3]int) error {
-
+	// fmt.Printf("ReplaceWithGopkginPath(%#v, %v)\n", pkgdir, version)
+	// fmt.Printf("ReplaceWithGithubPath(%#v)\n", pkgDir)
 	var (
 		err     error
 		pkg     *build.Package
@@ -490,18 +494,26 @@ steps:
 			target, err = GoPkginPath(pkgPath, version)
 		case 4:
 			deps, err = DependentsPrefix(pkgdir, pkgPath)
+		case 5:
+			var addDeps []string
+			addDeps, err = DependentsPrefix(pkgdir, gopkgin)
+			deps = append(deps, addDeps...)
 		}
 	}
 
 	if err != nil {
+		// fmt.Printf("err1: %s\n", err)
 		return err
 	}
+
+	// fmt.Printf("deps: %#v\n", deps)
 
 	repl := replaceFile{gopkgin: gopkgin, target: target, pkgPath: pkgPath}
 
 	for _, dep := range deps {
 		dpkg, err := build.Import(dep, pkg.SrcRoot, build.ImportMode(0))
 		if err != nil {
+			// fmt.Printf("err2: %s\n", err)
 			return err
 		}
 
@@ -509,6 +521,7 @@ steps:
 
 		for _, file := range files {
 			repl.filepath = filepath.Join(pkg.SrcRoot, dep, file)
+			// fmt.Printf("replace %s\n", repl.filepath)
 			if err := repl.replace(); err != nil {
 				return err
 			}
@@ -570,7 +583,12 @@ func LastVersion(versions ...string) ([3]int, error) {
 		v = append(v, vv)
 	}
 
-	return lastVersion(v...), nil
+	last := lastVersion(v...)
+
+	if last[0] == 0 && last[1] == 0 && last[2] == 0 {
+		return last, fmt.Errorf("can't find last version")
+	}
+	return last, nil
 }
 
 // gitTags returns the tags for the repo
@@ -604,26 +622,86 @@ func gitPushTags(tr *gitlib.Transaction) error {
 	return tr.PushTags()
 }
 
-func SetNewMajor(dir string, message string) ([3]int, error) {
-	return setNewVersion(dir, message, 0)
+func SetNewMajor(dir string) ([3]int, error) {
+	return setNewVersion(dir, 0)
 }
 
-func SetNewMinor(dir string, message string) ([3]int, error) {
-	return setNewVersion(dir, message, 1)
+func SetNewMinor(dir string) ([3]int, error) {
+	return setNewVersion(dir, 1)
 }
 
-func SetNewPatch(dir string, message string) ([3]int, error) {
-	return setNewVersion(dir, message, 2)
+func SetNewPatch(dir string) ([3]int, error) {
+	return setNewVersion(dir, 2)
+}
+
+func PushNewMajor(dir string) ([3]int, error) {
+	return pushNewVersion(dir, 0)
+}
+
+func PushNewMinor(dir string) ([3]int, error) {
+	return pushNewVersion(dir, 1)
+}
+
+func PushNewPatch(dir string) ([3]int, error) {
+	return pushNewVersion(dir, 2)
 }
 
 type newVersion struct {
 	version [3]int
 	level   int
-	message string
 	dir     string
 }
 
-func (n *newVersion) run(tr *gitlib.Transaction) (err error) {
+func (n *newVersion) push(tr *gitlib.Transaction) (err error) {
+	// tr.Debug = true
+	var (
+		pkg         *build.Package
+		pkgPath     string
+		gopkginPath string
+		getVersion  [3]int
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			n.version, err = lastVersionFromTag(tr)
+		case 1:
+			n.setVersion()
+			err = setTag(tr, VersionString(n.version))
+		case 2:
+			err = tr.PushTags()
+		case 3:
+			getVersion[0] = n.version[0]
+			pkg, err = Pkg(n.dir)
+		case 4:
+			pkgPath, err = PkgPath(pkg)
+		case 5:
+			gopkginPath, err = GoPkginPath(pkgPath, getVersion)
+		case 6:
+			err = GoGetAndInstall(pkg.SrcRoot, gopkginPath)
+		}
+	}
+	return
+}
+
+func (n *newVersion) setVersion() {
+	switch n.level {
+	case 0:
+		n.version[0]++
+		n.version[1] = 0
+		n.version[2] = 0
+	case 1:
+		n.version[1]++
+		n.version[2] = 0
+	case 2:
+		n.version[2]++
+	}
+}
+
+func (n *newVersion) setVersionInFiles(tr *gitlib.Transaction) (err error) {
 
 steps:
 	for jump := 1; err == nil; jump++ {
@@ -632,26 +710,14 @@ steps:
 			break steps
 
 		case 0:
+			// fmt.Println("get last version")
 			n.version, err = lastVersionFromTag(tr)
 		case 1:
-			switch n.level {
-			case 0:
-				n.version[0]++
-				n.version[1] = 0
-				n.version[2] = 0
-			case 1:
-				n.version[1]++
-				n.version[2] = 0
-			case 2:
-				n.version[2]++
-			}
-			err = ReplaceWithGopkginPath(n.dir, n.version)
-		case 2:
-			err = tr.Commit(n.message)
-		case 3:
-			err = setTag(tr, VersionString(n.version))
-		case 4:
-			err = tr.PushTags()
+			// fmt.Println("ReplaceWithGopkginPath")
+			n.setVersion()
+			var replaceVersion [3]int
+			replaceVersion[0] = n.version[0]
+			err = ReplaceWithGopkginPath(n.dir, replaceVersion)
 		}
 	}
 	return
@@ -665,12 +731,12 @@ steps:
 // - pushes the current branch to the default target, including the new tags
 // - returns the new version and the first error
 //
-func setNewVersion(dir string, message string, level int) ([3]int, error) {
+func setNewVersion(dir string, level int) ([3]int, error) {
 
 	var (
 		err error
 		git *gitlib.Git
-		n   = newVersion{level: level, message: message, dir: dir}
+		n   = newVersion{level: level, dir: dir}
 	)
 
 steps:
@@ -685,13 +751,41 @@ steps:
 		case 1:
 			git, err = gitlib.NewGit(dir)
 		case 2:
-			err = git.Transaction(n.run)
+			err = git.Transaction(n.setVersionInFiles)
 		}
 	}
 	return n.version, err
 }
 
-func GoGetAndInstall(pkgPath string) error {
+func pushNewVersion(dir string, level int) ([3]int, error) {
+
+	var (
+		err error
+		git *gitlib.Git
+		n   = newVersion{level: level, dir: dir}
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			if level != 0 && level != 1 && level != 2 {
+				err = fmt.Errorf("invalid level: %d", level)
+			}
+		case 1:
+			git, err = gitlib.NewGit(dir)
+		case 2:
+			err = git.Transaction(n.push)
+		}
+	}
+	return n.version, err
+}
+
+func GoGetAndInstall(src, pkgPath string) error {
+	os.RemoveAll(filepath.Join(src, pkgPath))
+
 	cmd := exec.Command("go", "get", pkgPath)
 	err := cmd.Run()
 
