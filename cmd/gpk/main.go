@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/go-on/gpk"
 	"go/build"
+	"gopkg.in/go-on/gpk.v1"
 	"gopkg.in/metakeule/config.v1"
 	"os"
 	"path/filepath"
@@ -19,7 +19,7 @@ last_version // shows the last version by tags
 */
 
 var (
-	cfg = config.MustNew("gpk", "1.0.0", "gpk is a tool to manage go libraries")
+	cfg = config.MustNew("gpk", "1.0", "gpk is a tool to manage go libraries")
 
 	dir = cfg.NewString(
 		"dir",

@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	_ "github.com/go-on/gpk/testdata/t1/sub"
+	_ "gopkg.in/go-on/gpk.v1/testdata/t1/sub"
 )
 
 func main() {
