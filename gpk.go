@@ -58,17 +58,10 @@ func isStdLib(p string) (bool, error) {
 		return false, fmt.Errorf("must be dir: %#v", p)
 	}
 	return true, nil
-	// return filepath.HasPrefix(p, runtime.GOROOT())
 }
 
 func extImports(pkg *build.Package) ([]string, error) {
-	// imps, err := Imports(dir)
 	imps := pkg.Imports
-	/*
-		if err != nil {
-			return nil, err
-		}
-	*/
 
 	e := []string{}
 
@@ -151,113 +144,91 @@ func inSlicePrefix(s []string, prefix string) bool {
 	return false
 }
 
+type dependentsWalker struct {
+	relpath   string
+	deps      []string
+	inSliceFn func([]string, string) bool
+}
+
+func (d *dependentsWalker) Walk(f string, info os.FileInfo, err error) error {
+
+	var (
+		imports []string
+		pkg     *build.Package
+		pkgPath string
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+
+		case 0:
+			// handle only directories
+			if !info.IsDir() {
+				break steps
+			}
+		case 1:
+			// skip hidden directories
+			if strings.HasPrefix(filepath.Base(f), ".") {
+				err = filepath.SkipDir
+			}
+		case 2:
+			// skip non packages
+			pkg, err = Pkg(f)
+			if err != nil {
+				err = nil
+				break steps
+			}
+		case 3:
+			imports, err = extImports(pkg)
+		case 4:
+			// don't track non dependent packages
+			if !d.inSliceFn(imports, d.relpath) {
+				break steps
+			}
+		case 5:
+			pkgPath, err = PkgPath(pkg)
+		case 6:
+			d.deps = append(d.deps, pkgPath)
+		}
+	}
+	return err
+}
+
 // Dependents returns packages inside the given dir
 // that are dependent of the given package, because they import it
 // does not look into directories that begin with the dot
 func Dependents(dir, p string) ([]string, error) {
-	d := []string{}
-	pkg, errPkg := Pkg(p)
 
-	if errPkg != nil {
-		return nil, errPkg
-	}
+	var (
+		err    error
+		pkg    *build.Package
+		walker = &dependentsWalker{inSliceFn: inSlice}
+	)
 
-	relPath, errRel := PkgPath(pkg)
-	if errRel != nil {
-		return nil, errRel
-	}
-
-	err := filepath.Walk(dir, func(f string, info os.FileInfo, err error) error {
-		// fmt.Printf("f: %#v\n", f)
-		if err != nil {
-			return err
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			pkg, err = Pkg(p)
+		case 1:
+			walker.relpath, err = PkgPath(pkg)
+		case 2:
+			err = filepath.Walk(dir, walker.Walk)
 		}
-		if info.IsDir() {
-			if strings.HasPrefix(filepath.Base(f), ".") {
-				return filepath.SkipDir
-			}
-			pk, errPkg := Pkg(f)
-			if errPkg != nil {
-				return nil
-			}
-
-			imps, errImps := extImports(pk)
-			if errImps != nil {
-				return errImps
-			}
-
-			if inSlice(imps, relPath) {
-				relImp, errRelImp := PkgPath(pk)
-
-				if errRelImp != nil {
-					return errRelImp
-				}
-
-				d = append(d, relImp)
-			}
-		}
-		return nil
-	})
-
-	return d, err
+	}
+	return walker.deps, err
 }
 
-// dependentsPrefix is like DependentsPrefix, but p is a package path, not a directory
-func dependentsPrefix(dir, relPath string) ([]string, error) {
-	d := []string{}
-
-	err := filepath.Walk(dir, func(f string, info os.FileInfo, err error) error {
-		// fmt.Printf("f: %#v\n", f)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if strings.HasPrefix(filepath.Base(f), ".") {
-				return filepath.SkipDir
-			}
-			pk, errPkg := Pkg(f)
-			if errPkg != nil {
-				return nil
-			}
-
-			imps, errImps := extImports(pk)
-			if errImps != nil {
-				return errImps
-			}
-
-			if inSlicePrefix(imps, relPath) {
-				relImp, errRelImp := PkgPath(pk)
-
-				if errRelImp != nil {
-					return errRelImp
-				}
-
-				d = append(d, relImp)
-			}
-		}
-		return nil
-	})
-
-	return d, err
-}
-
-// DependentsPrefix returns packages inside the given dir
-// that are dependent of the given package because they import it or a subpackage of it
-// does not look into directories that begin with the dot
-func DependentsPrefix(dir, p string) ([]string, error) {
-	// d := []string{}
-	pkg, errPkg := Pkg(p)
-
-	if errPkg != nil {
-		return nil, errPkg
-	}
-
-	relPath, errRel := PkgPath(pkg)
-	if errRel != nil {
-		return nil, errRel
-	}
-
-	return dependentsPrefix(dir, relPath)
+// DependentsPrefix is like DependentsPrefix, but relPath is a package path, not a directory
+func DependentsPrefix(dir, relPath string) ([]string, error) {
+	walker := &dependentsWalker{inSliceFn: inSlicePrefix, relpath: relPath}
+	err := filepath.Walk(dir, walker.Walk)
+	return walker.deps, err
 }
 
 // InGoPkgIn checks if the given path is in gopkg.in
@@ -297,28 +268,41 @@ func parseVersion(version string) ([3]int, error) {
 
 // GoPkginVersion parses major minor and patch version out of
 // a gopkg.in package string
-func GoPkginVersion(path string) ([3]int, error) {
-	v := [3]int{0, 0, 0}
+func GoPkginVersion(path string) (version [3]int, err error) {
 
-	if !InGoPkgin(path) {
-		return v, ErrNoGoPkginPath
+	var (
+		start int
+		end   int
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+
+		case 0:
+			if !InGoPkgin(path) {
+				err = ErrNoGoPkginPath
+			}
+		case 1:
+			start = strings.LastIndex(path, "v")
+			if start == -1 || len(path) <= start+1 {
+				err = ErrInvalidGoPkginPath
+			}
+		case 2:
+			end = strings.LastIndex(path, "/")
+			if end == -1 {
+				err = ErrInvalidGoPkginPath
+			}
+		case 3:
+			if end < start {
+				end = len(path)
+			}
+			version, err = parseVersion(path[start:end])
+		}
 	}
-
-	idx := strings.LastIndex(path, "v")
-	if idx == -1 || len(path) <= idx+1 {
-		return v, ErrInvalidGoPkginPath
-	}
-
-	end := strings.LastIndex(path, "/")
-	if end == -1 {
-		return v, ErrInvalidGoPkginPath
-	}
-
-	if end < idx {
-		end = len(path)
-	}
-
-	return parseVersion(path[idx:end])
+	return
 }
 
 var ErrInvalidGithubPath = errors.New("invalid github path")
@@ -384,37 +368,77 @@ func replaceGithub(github string, target string, in []byte) ([]byte, error) {
 	return re.ReplaceAll(in, []byte(`"`+target+"$1")), nil
 }
 
+type replaceFile struct {
+	filepath string
+	gopkgin  string
+	target   string
+	pkgPath  string
+}
+
+func (r replaceFile) replace() error {
+
+	var (
+		err      error
+		original []byte
+		replaced []byte
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			original, err = ioutil.ReadFile(r.filepath)
+		case 1:
+			replaced, err = replaceGopkgin(r.gopkgin, r.target, original)
+		case 2:
+			if r.pkgPath != "" {
+				replaced, err = replaceGithub(r.pkgPath, r.target, replaced)
+			}
+		case 3:
+			err = ioutil.WriteFile(r.filepath, replaced, 0644)
+		}
+	}
+	return err
+}
+
 // ReplaceWithGithubPath takes a pkg pkgDir that is a GithubPath.
 // It replaces inside every file inside every package beneath the given dir
 // an string that references any  gopkg variant of the given package by the github variant
 // It can be used for developement to be able to run the tests, switch back by calling
 // ReplaceWithGopkginPath
 func ReplaceWithGithubPath(pkgDir string) error {
-	// fmt.Println("replacing inside", pkgDir)
-	pkg, err := Pkg(pkgDir)
+
+	var (
+		err     error
+		pkg     *build.Package
+		pkgPath string
+		gopkgin string
+		deps    []string
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			pkg, err = Pkg(pkgDir)
+		case 1:
+			pkgPath, err = PkgPath(pkg)
+		case 2:
+			gopkgin, err = bareGoPkginPath(pkgPath)
+		case 3:
+			deps, err = DependentsPrefix(pkgDir, gopkgin)
+		}
+	}
+
 	if err != nil {
 		return err
 	}
 
-	pkgPath, err2 := PkgPath(pkg)
-
-	if err2 != nil {
-		return err2
-	}
-
-	gopkgin, err3 := bareGoPkginPath(pkgPath)
-
-	if err3 != nil {
-		return err3
-	}
-
-	deps, err4 := dependentsPrefix(pkgDir, gopkgin)
-
-	if err4 != nil {
-		return err4
-	}
-
-	// fmt.Printf("deps: %#v\n", deps)
+	repl := replaceFile{gopkgin: gopkgin, target: pkgPath}
 
 	for _, dep := range deps {
 		dpkg, err := build.Import(dep, pkg.SrcRoot, build.ImportMode(0))
@@ -422,61 +446,13 @@ func ReplaceWithGithubPath(pkgDir string) error {
 			return err
 		}
 
-		for _, file := range dpkg.GoFiles {
-			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
-
-			path := filepath.Join(pkg.SrcRoot, dep, file)
-
-			bt, err := ioutil.ReadFile(path)
-
-			if err != nil {
+		files := append(dpkg.GoFiles, dpkg.TestGoFiles...)
+		for _, file := range files {
+			repl.filepath = filepath.Join(pkg.SrcRoot, dep, file)
+			if err := repl.replace(); err != nil {
 				return err
 			}
-
-			out, err2 := replaceGopkgin(gopkgin, pkgPath, bt)
-
-			if err2 != nil {
-				return err2
-			}
-
-			err3 := ioutil.WriteFile(path, out, 0644)
-
-			if err3 != nil {
-				return err3
-			}
-
-			// bytes.Replace(bt, pkgPath, new, n)
-			/**/
 		}
-
-		for _, file := range dpkg.TestGoFiles {
-			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
-
-			path := filepath.Join(pkg.SrcRoot, dep, file)
-
-			bt, err := ioutil.ReadFile(path)
-
-			if err != nil {
-				return err
-			}
-
-			out, err2 := replaceGopkgin(gopkgin, pkgPath, bt)
-
-			if err2 != nil {
-				return err2
-			}
-
-			err3 := ioutil.WriteFile(path, out, 0644)
-
-			if err3 != nil {
-				return err3
-			}
-
-		}
-
-		// dpkg.GoFiles
-
-		// dpkg.TestGoFiles
 	}
 
 	return nil
@@ -489,37 +465,39 @@ func ReplaceWithGithubPath(pkgDir string) error {
 // It can be used to release a package after ReplaceWithGithubPath has been used or to update
 // a version number
 func ReplaceWithGopkginPath(pkgdir string, version [3]int) error {
-	// fmt.Println("replacing inside", pkgDir)
-	pkg, err := Pkg(pkgdir)
+
+	var (
+		err     error
+		pkg     *build.Package
+		pkgPath string
+		gopkgin string
+		target  string
+		deps    []string
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			pkg, err = Pkg(pkgdir)
+		case 1:
+			pkgPath, err = PkgPath(pkg)
+		case 2:
+			gopkgin, err = bareGoPkginPath(pkgPath)
+		case 3:
+			target, err = GoPkginPath(pkgPath, version)
+		case 4:
+			deps, err = DependentsPrefix(pkgdir, pkgPath)
+		}
+	}
+
 	if err != nil {
 		return err
 	}
 
-	pkgPath, err2 := PkgPath(pkg)
-
-	if err2 != nil {
-		return err2
-	}
-
-	gopkgin, err3 := bareGoPkginPath(pkgPath)
-
-	if err3 != nil {
-		return err3
-	}
-
-	target, errX := GoPkginPath(pkgPath, version)
-
-	if errX != nil {
-		return errX
-	}
-
-	deps, err4 := dependentsPrefix(pkgdir, pkgPath)
-
-	if err4 != nil {
-		return err4
-	}
-
-	// fmt.Printf("deps: %#v\n", deps)
+	repl := replaceFile{gopkgin: gopkgin, target: target, pkgPath: pkgPath}
 
 	for _, dep := range deps {
 		dpkg, err := build.Import(dep, pkg.SrcRoot, build.ImportMode(0))
@@ -527,75 +505,15 @@ func ReplaceWithGopkginPath(pkgdir string, version [3]int) error {
 			return err
 		}
 
-		for _, file := range dpkg.GoFiles {
-			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
+		files := append(dpkg.GoFiles, dpkg.TestGoFiles...)
 
-			path := filepath.Join(pkg.SrcRoot, dep, file)
-
-			bt, err := ioutil.ReadFile(path)
-
-			if err != nil {
+		for _, file := range files {
+			repl.filepath = filepath.Join(pkg.SrcRoot, dep, file)
+			if err := repl.replace(); err != nil {
 				return err
 			}
-
-			out, err2 := replaceGopkgin(gopkgin, target, bt)
-
-			if err2 != nil {
-				return err2
-			}
-
-			out, err2 = replaceGithub(pkgPath, target, out)
-
-			if err2 != nil {
-				return err2
-			}
-
-			err3 := ioutil.WriteFile(path, out, 0644)
-
-			if err3 != nil {
-				return err3
-			}
-
-			// bytes.Replace(bt, pkgPath, new, n)
-			/**/
 		}
-
-		for _, file := range dpkg.TestGoFiles {
-			// fmt.Println(filepath.Join(pkg.SrcRoot, dep, file))
-
-			path := filepath.Join(pkg.SrcRoot, dep, file)
-
-			bt, err := ioutil.ReadFile(path)
-
-			if err != nil {
-				return err
-			}
-
-			out, err2 := replaceGopkgin(gopkgin, target, bt)
-
-			if err2 != nil {
-				return err2
-			}
-
-			out, err2 = replaceGithub(pkgPath, target, out)
-
-			if err2 != nil {
-				return err2
-			}
-
-			err3 := ioutil.WriteFile(path, out, 0644)
-
-			if err3 != nil {
-				return err3
-			}
-
-		}
-
-		// dpkg.GoFiles
-
-		// dpkg.TestGoFiles
 	}
-
 	return nil
 }
 
@@ -698,6 +616,47 @@ func SetNewPatch(dir string, message string) ([3]int, error) {
 	return setNewVersion(dir, message, 2)
 }
 
+type newVersion struct {
+	version [3]int
+	level   int
+	message string
+	dir     string
+}
+
+func (n *newVersion) run(tr *gitlib.Transaction) (err error) {
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+
+		case 0:
+			n.version, err = lastVersionFromTag(tr)
+		case 1:
+			switch n.level {
+			case 0:
+				n.version[0]++
+				n.version[1] = 0
+				n.version[2] = 0
+			case 1:
+				n.version[1]++
+				n.version[2] = 0
+			case 2:
+				n.version[2]++
+			}
+			err = ReplaceWithGopkginPath(n.dir, n.version)
+		case 2:
+			err = tr.Commit(n.message)
+		case 3:
+			err = setTag(tr, VersionString(n.version))
+		case 4:
+			err = tr.PushTags()
+		}
+	}
+	return
+}
+
 // setNewVersion does the following:
 // - gets the next version (level = 2 (patch) / 1 (minor)/ 0 (major))
 // - replaces the references inside this package to this version
@@ -707,62 +666,29 @@ func SetNewPatch(dir string, message string) ([3]int, error) {
 // - returns the new version and the first error
 //
 func setNewVersion(dir string, message string, level int) ([3]int, error) {
-	var vers [3]int
 
-	if level != 0 && level != 1 && level != 2 {
-		return vers, fmt.Errorf("invalid level: %d", level)
-	}
+	var (
+		err error
+		git *gitlib.Git
+		n   = newVersion{level: level, message: message, dir: dir}
+	)
 
-	git, err := gitlib.NewGit(dir)
-
-	if err != nil {
-		return vers, err
-	}
-
-	err = git.Transaction(func(tr *gitlib.Transaction) error {
-
-		var err error
-		vers, err = lastVersionFromTag(tr)
-
-		if err != nil {
-			return err
-		}
-
-		switch level {
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
 		case 0:
-			vers[0]++
-			vers[1] = 0
-			vers[2] = 0
+			if level != 0 && level != 1 && level != 2 {
+				err = fmt.Errorf("invalid level: %d", level)
+			}
 		case 1:
-			vers[1]++
-			vers[2] = 0
+			git, err = gitlib.NewGit(dir)
 		case 2:
-			vers[2]++
+			err = git.Transaction(n.run)
 		}
-
-		err = ReplaceWithGopkginPath(dir, vers)
-
-		if err != nil {
-			return err
-		}
-
-		err = tr.Commit(message)
-
-		if err != nil {
-			return err
-		}
-
-		err = setTag(tr, VersionString(vers))
-
-		if err != nil {
-			return err
-		}
-
-		return tr.PushTags()
-	})
-
-	return vers, err
-
+	}
+	return n.version, err
 }
 
 func GoGetAndInstall(pkgPath string) error {

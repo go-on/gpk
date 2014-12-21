@@ -103,7 +103,7 @@ func TestDependents(t *testing.T) {
 }
 
 func TestDependentsPrefix(t *testing.T) {
-	deps, err := DependentsPrefix(wd, testpkg_t1)
+	deps, err := DependentsPrefix(wd, "github.com/go-on/gpk/testdata/t1")
 	if err != nil {
 		t.Error(err)
 	}
