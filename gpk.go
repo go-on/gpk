@@ -48,10 +48,13 @@ func isStdLib(p string) (bool, error) {
 	}
 
 	info, err := os.Stat(p)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
 	// log.Printf("info: %#v\n", info)
 	// fmt.Println("p", p)
 	if err != nil {
-		return false, nil
+		return true, err
 	}
 
 	if !info.IsDir() {
