@@ -573,14 +573,13 @@ func VersionString(version [3]int) string {
 // LastVersion returns the last version of a version slice like this
 // []string{"v1","v5", "v1.10"}
 func LastVersion(versions ...string) ([3]int, error) {
-	l := [3]int{0, 0, 0}
 	var v [][3]int
 
 	for _, vers := range versions {
 		vv, err := parseVersion(vers)
 
 		if err != nil {
-			return l, err
+			continue
 		}
 
 		v = append(v, vv)
