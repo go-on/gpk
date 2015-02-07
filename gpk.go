@@ -16,6 +16,8 @@ import (
 	"strings"
 )
 
+var DEBUG bool
+
 func Pkg(dir string) (*build.Package, error) {
 	return build.ImportDir(dir, build.ImportMode(0))
 }
@@ -778,6 +780,9 @@ steps:
 			}
 		case 1:
 			git, err = gitlib.NewGit(dir)
+			if DEBUG {
+				git.Debug = true
+			}
 		case 2:
 			err = git.Transaction(n.push)
 		}

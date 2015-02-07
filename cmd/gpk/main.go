@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"go/build"
 	"gopkg.in/go-on/gpk.v1"
-	"gopkg.in/metakeule/config.v1"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/metakeule/config.v1"
 )
 
 /*
@@ -19,7 +20,7 @@ last_version // shows the last version by tags
 */
 
 var (
-	cfg = config.MustNew("gpk", "1.0", "gpk is a tool to manage go libraries")
+	cfg = config.MustNew("gpk", "1.1", "gpk is a tool to manage go libraries")
 
 	dir = cfg.NewString(
 		"dir",
@@ -28,6 +29,8 @@ var (
 		config.Required,
 		config.Shortflag('d'),
 	)
+
+	verbose = cfg.NewBool("verbose", "verbose messages", config.Shortflag('v'))
 
 	develop = cfg.MustCommand("develop", "switch package to github repo in order to develop")
 
@@ -66,6 +69,10 @@ func main() {
 
 	err := cfg.Run()
 	reportError(err)
+
+	if verbose.Get() {
+		gpk.DEBUG = true
+	}
 
 	switch cfg.ActiveCommand() {
 	case imports:
