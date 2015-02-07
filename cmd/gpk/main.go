@@ -34,6 +34,10 @@ var (
 
 	develop = cfg.MustCommand("develop", "switch package to github repo in order to develop")
 
+	replace       = cfg.MustCommand("replace", "replace an import with another")
+	replaceSrc    = replace.NewString("src", "the import that should be replaced", config.Required)
+	replaceTarget = replace.NewString("target", "the replacement for the import", config.Required)
+
 	release     = cfg.MustCommand("release", "change pkg import paths to release tag")
 	releaseStep = release.NewString("step", "step that should be upped, available options are: minor|major|patch",
 		config.Required,
@@ -75,6 +79,8 @@ func main() {
 	}
 
 	switch cfg.ActiveCommand() {
+	case replace:
+		err = gpk.ReplaceImport(getDir(), replaceSrc.Get(), replaceTarget.Get())
 	case imports:
 		var imps []string
 		imps, err = gpk.ExtImports(getDir())

@@ -41,27 +41,32 @@ func Imports(dir string) ([]string, error) {
 }
 
 func isStdLib(p string) (bool, error) {
+	// fmt.Println(runtime.Version())
 	// var p string
-	switch runtime.Version() {
-	case "go1.4":
+	if strings.HasPrefix(runtime.Version(), "go1.4") {
 		p = filepath.Join(runtime.GOROOT(), "src", p)
-	default:
+	} else {
 		p = filepath.Join(runtime.GOROOT(), "src", "pkg", p)
 	}
 
+	// fmt.Print("is stdlib ", p, ": ")
 	info, err := os.Stat(p)
 	if os.IsNotExist(err) {
+		// fmt.Println(false)
 		return false, nil
 	}
 	// log.Printf("info: %#v\n", info)
 	// fmt.Println("p", p)
 	if err != nil {
+		// fmt.Println(true)
 		return true, err
 	}
 
 	if !info.IsDir() {
+		// fmt.Println(false)
 		return false, fmt.Errorf("must be dir: %#v", p)
 	}
+	// fmt.Println(true)
 	return true, nil
 }
 
@@ -375,6 +380,46 @@ func replaceGithub(github string, target string, in []byte) ([]byte, error) {
 	return re.ReplaceAll(in, []byte(`"`+target+"$1")), nil
 }
 
+type replaceImport struct {
+	filepath       string
+	originalImport string
+	targetImport   string
+}
+
+func (r replaceImport) replaceInFile(in []byte) ([]byte, error) {
+	// fmt.Printf("replacing %#v with %#v\n", gopkginBare, target)
+	re, err := regexp.Compile(`"` + regexp.QuoteMeta(r.originalImport) + `"`)
+	// fmt.Println(re)
+	if err != nil {
+		return nil, err
+	}
+
+	return re.ReplaceAll(in, []byte(`"`+r.targetImport+`"`)), nil
+}
+
+func (r replaceImport) replace() error {
+	var (
+		err      error
+		original []byte
+		replaced []byte
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			original, err = ioutil.ReadFile(r.filepath)
+		case 1:
+			replaced, err = r.replaceInFile(original)
+		case 2:
+			err = ioutil.WriteFile(r.filepath, replaced, 0644)
+		}
+	}
+	return err
+}
+
 type replaceFile struct {
 	filepath string
 	gopkgin  string
@@ -464,6 +509,56 @@ steps:
 	}
 
 	return nil
+}
+
+/*
+type replaceImport struct {
+	filepath       string
+	originalImport string
+	targetImport   string
+}
+*/
+
+func ReplaceImport(pkgDir, original, target string) (err error) {
+	var (
+		pkg  *build.Package
+		dpkg *build.Package
+		deps []string
+	)
+
+steps:
+	for jump := 1; err == nil; jump++ {
+		switch jump - 1 {
+		default:
+			break steps
+		case 0:
+			pkg, err = Pkg(pkgDir)
+		case 1:
+			deps, err = Dependents(pkgDir, original)
+		case 2:
+			repl := replaceImport{
+				originalImport: original,
+				targetImport:   target,
+			}
+
+			for _, dep := range deps {
+				dpkg, err = build.Import(dep, pkg.SrcRoot, build.ImportMode(0))
+				if err != nil {
+					return
+				}
+
+				files := append(dpkg.GoFiles, dpkg.TestGoFiles...)
+				for _, file := range files {
+					repl.filepath = filepath.Join(pkg.SrcRoot, dep, file)
+					if err = repl.replace(); err != nil {
+						return
+					}
+				}
+			}
+		}
+	}
+
+	return
 }
 
 // ReplaceWithGithubPath takes a pkg pkgDir that is a GithubPath.
