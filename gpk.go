@@ -717,6 +717,7 @@ func setTag(tr *gitlib.Transaction, tag string) error {
 	return tr.Tag(tag, sha1, "")
 }
 
+// hopefully works, looks like git push reports an error if nothing changed.
 func gitPushTags(tr *gitlib.Transaction) error {
 	return tr.PushTags()
 }
