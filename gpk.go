@@ -388,13 +388,13 @@ type replaceImport struct {
 
 func (r replaceImport) replaceInFile(in []byte) ([]byte, error) {
 	// fmt.Printf("replacing %#v with %#v\n", gopkginBare, target)
-	re, err := regexp.Compile(`"` + regexp.QuoteMeta(r.originalImport) + `"`)
+	re, err := regexp.Compile(`"` + regexp.QuoteMeta(r.originalImport))
 	// fmt.Println(re)
 	if err != nil {
 		return nil, err
 	}
 
-	return re.ReplaceAll(in, []byte(`"`+r.targetImport+`"`)), nil
+	return re.ReplaceAll(in, []byte(`"`+r.targetImport)), nil
 }
 
 func (r replaceImport) replace() error {
