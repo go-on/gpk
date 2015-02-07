@@ -534,7 +534,7 @@ steps:
 		case 0:
 			pkg, err = Pkg(pkgDir)
 		case 1:
-			deps, err = Dependents(pkgDir, original)
+			deps, err = DependentsPrefix(pkgDir, original)
 		case 2:
 			repl := replaceImport{
 				originalImport: original,
